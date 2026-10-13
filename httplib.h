@@ -16821,15 +16821,22 @@ inline bool set_hostname(session_t session, const char *hostname) {
 
   auto ssl = static_cast<SSL *>(session);
 
-  // Set SNI (Server Name Indication)
-  if (!set_sni(session, hostname)) { return false; }
-
   // Enable hostname verification
   auto param = SSL_get0_param(ssl);
   if (!param) return false;
 
-  X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-  if (X509_VERIFY_PARAM_set1_host(param, hostname, 0) != 1) { return false; }
+  if (detail::is_ip_address(hostname)) {
+    // RFC 6066: SNI must not be set for IP addresses; verify against the
+    // certificate's IP SANs instead of its DNS names
+    if (X509_VERIFY_PARAM_set1_ip_asc(param, hostname) != 1) { return false; }
+  } else {
+    // Set SNI (Server Name Indication)
+    if (!set_sni(session, hostname)) { return false; }
+
+    X509_VERIFY_PARAM_set_hostflags(param,
+                                    X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    if (X509_VERIFY_PARAM_set1_host(param, hostname, 0) != 1) { return false; }
+  }
 
   SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
   return true;
